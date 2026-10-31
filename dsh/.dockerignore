@@ -1,0 +1,6 @@
+*
+!Dockerfile
+!*.mjs
+!with-home-lock.sh
+!releases/
+!releases/**
