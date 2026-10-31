@@ -278,7 +278,7 @@ def main():
                 "docker", "run", "--rm", "--user", "0:0", "--network", "none",
                 "--mount", f"type=bind,src={home},dst=/home/dsh",
                 "--entrypoint", "chown", runtime_image,
-                f"{os.getuid()}:{os.getgid()}", "/home/dsh",
+                "-R", f"{os.getuid()}:{os.getgid()}", "/home/dsh",
             ], capture_output=True)
             subprocess.run(["docker", "image", "rm", gateway_image, runtime_image], capture_output=True)
 
