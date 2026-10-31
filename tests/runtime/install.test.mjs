@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, readlink, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readlink, rm, cp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { prepareHome } from '../../dsh/home.mjs';
@@ -58,4 +58,30 @@ test('installer reports disk exhaustion without destroying projects', async t =>
 });
 test('commands time out and do not expose child diagnostics', async () => {
   await assert.rejects(runQuiet(process.execPath,['-e',"console.error('private-diagnostic');setInterval(()=>{},1000)"],{timeout:50}),/timed out/);
+});
+
+test('installation cancellation terminates the running command',async()=>{
+  const controller=new AbortController();
+  const promise=runQuiet(process.execPath,['-e','setInterval(()=>{},1000)'],{signal:controller.signal,timeout:30000});
+  controller.abort();
+  await assert.rejects(promise,/interrupted/);
+});
+
+test('explicit locked version update preserves user data and switches active installation',async t=>{
+  const f=await fixture(t);
+  const first=await ensureInstalled({...f,run:successfulInstall});
+  await writeFile(join(f.paths.dshHome,'test-history.json'),'{"messages":["keep"]}');
+  const next='1.2.4';
+  await cp(join(f.manifests,f.version),join(f.manifests,next),{recursive:true});
+  for(const name of ['package.json','package-lock.json']) {
+    const path=join(f.manifests,next,name);
+    await writeFile(path,(await readFile(path,'utf8')).replaceAll(f.version,next));
+  }
+  const second=await ensureInstalled({...f,version:next,run:async(command,args,options)=>{
+    await successfulInstall(command,args,options);
+    if(command==='npm')await writeFile(join(options.cwd,'node_modules/@deepseek-ai/dsh/package.json'),JSON.stringify({version:next}));
+  }});
+  assert.notEqual(first,second);
+  assert.equal(await readlink(join(f.paths.state,'current')),second);
+  assert.equal(await readFile(join(f.paths.dshHome,'test-history.json'),'utf8'),'{"messages":["keep"]}');
 });

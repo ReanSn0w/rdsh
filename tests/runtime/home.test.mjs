@@ -35,3 +35,11 @@ test('managed directories cannot redirect writes outside HOME', async t => {
   await symlink(external, join(home, '.rdsh'));
   await assert.rejects(prepareHome(home), /outside/);
 });
+
+test('unwritable home reports a bind-mount permission problem',async t=>{
+  const home=await mkdtemp(join(tmpdir(),'rdsh-readonly-'));
+  t.after(async()=>{await chmod(home,0o700);await rm(home,{recursive:true,force:true});});
+  await chmod(home,0o500);
+  if(process.getuid?.()===0) return t.skip('root bypasses ordinary filesystem permissions');
+  await assert.rejects(prepareHome(home),/not writable/);
+});

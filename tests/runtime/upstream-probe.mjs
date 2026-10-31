@@ -33,7 +33,7 @@ async function start() {
     const match = output.match(/dsh web: (https?:\/\/\S+)/);
     if (match) {
       const token = new URL(match[1]).searchParams.get('token');
-      assert.match(token ?? '', /^[A-Za-z0-9_-]{43}$/);
+      assert.ok(/^[A-Za-z0-9_-]{43}$/.test(token ?? ''), 'valid launch token format required');
       return token;
     }
     if (child.exitCode !== null) {
@@ -84,7 +84,7 @@ try {
   console.log('PASS: token exchange, root, HTTP API and WebSocket authentication');
   await stop();
   const second = await start();
-  assert.notEqual(first, second);
+  assert.ok(first !== second, 'launch token must rotate');
   assert.equal((await http(`/?token=${encodeURIComponent(first)}`)).status, 401);
   assert.equal((await http('/', cookie)).status, 200);
   assert.equal((await http(`/?token=${encodeURIComponent(second)}`)).status, 303);

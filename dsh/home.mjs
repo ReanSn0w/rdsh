@@ -15,7 +15,7 @@ export async function prepareHome(home) {
   if (process.getuid && info.uid !== process.getuid()) throw new Error('HOME owner does not match RDSH_UID; fix ownership of the dedicated directory on the host');
   const root = await realpath(home);
   const paths = {
-    state: join(root, '.rdsh'), releases: join(root, '.rdsh/releases'),
+    state: join(root, '.rdsh'), releases: join(root, '.rdsh/releases'), cache: join(root, '.cache'),
     npmCache: join(root, '.cache/npm'), nativeCache: join(root, '.cache/native'),
     dshHome: join(root, '.dsh'), workspace: join(root, 'workspaces'),
   };
