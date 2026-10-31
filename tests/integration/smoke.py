@@ -120,7 +120,7 @@ def main():
     project = "rdsh-smoke-" + uuid.uuid4().hex[:10]
     uid, gid = (os.getuid() or 1000), (os.getgid() or 1000)
     http_port, tls_port, management_port = free_port(), free_port(), free_port()
-    environment = {**os.environ, "PUBLIC_URL": f"https://dsh.example.test:{tls_port}/", "DSH_VERSION": "0.2.1-rc.5", "RDSH_UID": str(uid), "RDSH_GID": str(gid), "GATEWAY_HTTP_PORT": str(http_port), "PROXY_NETWORK": project + "-proxy", "TRUSTED_PROXIES": "", "ACME_EMAIL": "integration@example.test"}
+    environment = {**os.environ, "PUBLIC_URL": f"https://dsh.example.test:{tls_port}/", "DSH_VERSION": "0.2.1-rc.5", "GATEWAY_HTTP_PORT": str(http_port), "PROXY_NETWORK": project + "-proxy", "TRUSTED_PROXIES": "", "ACME_EMAIL": "integration@example.test"}
     if args.standard_public_ports:
         tls_port = 443
     if args.proxy_mode == "auto" or args.standard_public_ports:
@@ -137,8 +137,8 @@ def main():
         override = temporary / "test.json"
         gateway_image, runtime_image = project + "-gateway", project + "-dsh"
         override.write_text(json.dumps({"services": {
-            "gateway": {"image": gateway_image, "build": {"context": str(args.gateway_context.resolve())}},
-            "dsh": {"image": runtime_image, "build": {"context": str(args.runtime_context.resolve())}, "volumes": [{"type": "bind", "source": str(home), "target": "/home/dsh"}, {"type": "volume", "source": "handoff", "target": "/run/rdsh"}]}}}))
+            "gateway": {"image": gateway_image, "pull_policy": "never", "build": {"context": str(args.gateway_context.resolve())}},
+            "dsh": {"image": runtime_image, "pull_policy": "never", "build": {"context": str(args.runtime_context.resolve())}, "volumes": [{"type": "bind", "source": str(home), "target": "/home/dsh"}, {"type": "volume", "source": "handoff", "target": "/run/rdsh"}]}}}))
         variant = ROOT / ("compose.proxy-host.yml" if args.proxy_mode == "host" else "compose.proxy-network.yml")
         if args.proxy_mode == "auto":
             # Same auto-mode override, only host ports differ to avoid other apps.
@@ -158,6 +158,8 @@ def main():
         try:
             print(f"Building isolated images ({args.proxy_mode} proxy)", flush=True)
             command(*compose, "build", env=environment)
+            # Published images use the fixed non-root identity 1000:1000.
+            command("docker", "run", "--rm", "--user", "0:0", "--network", "none", "--mount", f"type=bind,src={home},dst=/home/dsh", "--entrypoint", "chown", runtime_image, "1000:1000", "/home/dsh")
             if args.proxy_mode == "host":
                 print(command(sys.executable, str(ROOT / "tests/integration/image-boundaries.py"), gateway_image, runtime_image).stdout.decode(), end="", flush=True)
             hashed = command("docker", "run", "--rm", "-i", "--network", "none", gateway_image, "hash-password", input=b"integration-test-password\n").stdout
@@ -227,11 +229,21 @@ def main():
             if args.proxy_mode in ("network", "auto"):
                 status, _, _ = browser.request("GET", "/api/remote.mux", extra={"Connection": "Upgrade", "Upgrade": "websocket", "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ=="})
                 assert status == 101, f"authenticated WebSocket status {status}"
-            marker = home / "persistence-check.txt"
-            marker.write_text("synthetic persistence marker\n")
+            marker = "/home/dsh/persistence-check.txt"
+            command(
+                "docker", "run", "--rm", "--user", "1000:1000", "--network", "none",
+                "--mount", f"type=bind,src={home},dst=/home/dsh",
+                "--entrypoint", "sh", runtime_image, "-c",
+                f"printf '%s\\n' 'synthetic persistence marker' > {marker}",
+            )
             print("Checking DSH recreation, preserved home and fresh-browser login", flush=True)
             command(*compose, "up", "-d", "--force-recreate", "--wait", "--wait-timeout", "180", "dsh", env=environment)
-            assert marker.read_text() == "synthetic persistence marker\n"
+            persisted = command(
+                "docker", "run", "--rm", "--user", "1000:1000", "--network", "none",
+                "--mount", f"type=bind,src={home},dst=/home/dsh,readonly",
+                "--entrypoint", "cat", runtime_image, marker,
+            ).stdout
+            assert persisted == b"synthetic persistence marker\n"
             assert browser.request("GET", "/")[0] == 200, "existing browser session lost after DSH recreation"
             Browser(tls_port, certificate, authority).login()
             print("Checking logout and gateway session revocation", flush=True)
@@ -262,6 +274,12 @@ def main():
                 subprocess.run(compose + ["down", "-v", "--remove-orphans"], env=environment, capture_output=True)
             if network_created:
                 subprocess.run(["docker", "network", "rm", environment["PROXY_NETWORK"]], capture_output=True)
+            subprocess.run([
+                "docker", "run", "--rm", "--user", "0:0", "--network", "none",
+                "--mount", f"type=bind,src={home},dst=/home/dsh",
+                "--entrypoint", "chown", runtime_image,
+                "-R", f"{os.getuid()}:{os.getgid()}", "/home/dsh",
+            ], capture_output=True)
             subprocess.run(["docker", "image", "rm", gateway_image, runtime_image], capture_output=True)
 
 

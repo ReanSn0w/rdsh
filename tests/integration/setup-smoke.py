@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Verify install -> hash command -> literal .env interpolation with real Docker."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -18,18 +19,23 @@ def main():
         temporary = Path(directory).resolve()
         environment = fixture(temporary)
         destination = temporary / "deployment"
-        run("bash", str(ROOT / "scripts/install.sh"), str(destination), env=environment)
         project = "rdsh-bootstrap-" + uuid.uuid4().hex[:10]
-        image = project + "-gateway"
-        override = temporary / "image.json"
-        override.write_text(json.dumps({"services": {"gateway": {"image": image}}}))
-        compose = ["docker", "compose", "--env-file", str(destination / ".env"), "-p", project, "-f", str(destination / "docker-compose.yml"), "-f", str(override)]
+        gateway_image = project + "-gateway"
+        dsh_image = project + "-dsh"
+        run("docker", "build", "-t", gateway_image, str(ROOT / "gateway"))
+        run("docker", "build", "-t", dsh_image, str(ROOT / "dsh"))
+        environment.update({"RDSH_GATEWAY_IMAGE": gateway_image, "RDSH_DSH_IMAGE": dsh_image})
+        run("bash", str(ROOT / "scripts/install.sh"), str(destination), env=environment)
+        compose = ["docker", "compose", "--env-file", str(destination / ".env"), "-p", project, "-f", str(destination / "docker-compose.yml")]
         probe = None
         try:
             config_file = destination / ".env"  # Our own disposable generated template only.
-            config_file.write_text(config_file.read_text().replace("PUBLIC_URL=https://dsh.example.com/", "PUBLIC_URL="))
+            config_file.write_text(config_file.read_text()
+                .replace("PUBLIC_URL=https://dsh.example.com/", "PUBLIC_URL=")
+                .replace("ghcr.io/reansn0w/rdsh-gateway:latest", gateway_image)
+                .replace("ghcr.io/reansn0w/rdsh-dsh:latest", dsh_image))
             # Empty credentials allow a one-shot command, without starting DSH or ports.
-            output = run(*compose, "run", "--build", "--rm", "--no-deps", "-T", "gateway", "hash-password", input=b"bootstrap-test-password\n").stdout
+            output = run(*compose, "run", "--rm", "--no-deps", "-T", "gateway", "hash-password", input=b"bootstrap-test-password\n").stdout
             # BuildKit progress may share stdout with the final CLI result.
             hashed = output.strip().splitlines()[-1].decode()
             assert hashed.startswith("$2") and len(hashed) == 60
@@ -53,7 +59,13 @@ def main():
             if probe:
                 subprocess.run(["docker", "rm", "-f", probe], capture_output=True)
             subprocess.run(compose + ["down", "-v"], capture_output=True)
-            subprocess.run(["docker", "image", "rm", image], capture_output=True)
+            subprocess.run([
+                "docker", "run", "--rm", "--user", "0:0", "--network", "none",
+                "--mount", f"type=bind,src={destination / 'data/home'},dst=/home/dsh",
+                "--entrypoint", "chown", dsh_image,
+                "-R", f"{os.getuid()}:{os.getgid()}", "/home/dsh",
+            ], capture_output=True)
+            subprocess.run(["docker", "image", "rm", gateway_image, dsh_image], capture_output=True)
 
 
 if __name__ == "__main__":

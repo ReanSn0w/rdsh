@@ -17,7 +17,7 @@ class BootstrapSafety(unittest.TestCase):
         self.env = fixture(self.root)
         # The installer must not start Docker workloads.
         docker = self.root / "bin/docker"
-        docker.write_text('#!/bin/sh\n[ "$*" = "compose version" ]\n')
+        docker.write_text('#!/bin/sh\nexit 0\n')
         docker.chmod(0o700)
         self.target = self.root / "new deployment"
 
@@ -31,12 +31,12 @@ class BootstrapSafety(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(config.stat().st_mode), 0o600)
         text = config.read_text()  # Only this test's newly generated template.
         self.assertIn("AUTH_PASSWORD_HASH=''", text)
-        self.assertIn(f"RDSH_UID={os.getuid() or 1000}\n", text)
+        self.assertIn("RDSH_DSH_IMAGE=ghcr.io/reansn0w/rdsh-dsh:latest", text)
+        self.assertIn("--cap-add CHOWN", (ROOT / "scripts/install.sh").read_text())
         home = self.target / "data/home"
         self.assertEqual(stat.S_IMODE(home.stat().st_mode), 0o700)
-        self.assertEqual(home.stat().st_uid, os.getuid() or 1000)
-        self.assertTrue((self.target / "gateway/Dockerfile").exists())
-        self.assertTrue((self.target / "dsh/releases/0.2.1-rc.5/package-lock.json").exists())
+        self.assertFalse((self.target / "gateway").exists())
+        self.assertFalse((self.target / "dsh").exists())
         self.assertFalse((self.target / "scripts").exists())
         self.assertFalse((self.target / ".git").exists())
         self.assertFalse(list(self.root.glob(".rdsh-install.*")))

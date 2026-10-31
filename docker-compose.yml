@@ -9,13 +9,9 @@ x-logging: &logging
 
 services:
   dsh:
-    image: rdsh-dsh:local
-    build:
-      context: ./dsh
-      args:
-        RDSH_UID: ${RDSH_UID:-1000}
-        RDSH_GID: ${RDSH_GID:-1000}
-    user: "${RDSH_UID:-1000}:${RDSH_GID:-1000}"
+    image: ${RDSH_DSH_IMAGE:-ghcr.io/reansn0w/rdsh-dsh:latest}
+    pull_policy: missing
+    user: "1000:1000"
     init: true
     read_only: true
     cap_drop: [ALL]
@@ -52,13 +48,9 @@ services:
     logging: *logging
 
   gateway:
-    image: rdsh-gateway:local
-    build:
-      context: ./gateway
-      args:
-        RDSH_UID: ${RDSH_UID:-1000}
-        RDSH_GID: ${RDSH_GID:-1000}
-    user: "${RDSH_UID:-1000}:${RDSH_GID:-1000}"
+    image: ${RDSH_GATEWAY_IMAGE:-ghcr.io/reansn0w/rdsh-gateway:latest}
+    pull_policy: missing
+    user: "1000:1000"
     init: true
     read_only: true
     cap_drop: [ALL]
