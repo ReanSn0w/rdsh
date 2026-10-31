@@ -37,7 +37,7 @@ container or a Docker socket.
 Set `GATEWAY_HTTP_PORT` to an available port and start:
 
 ```sh
-docker compose -f docker-compose.yml -f compose.proxy-host.yml up -d --build
+docker compose -f docker-compose.yml -f compose.proxy-host.yml up -d
 ```
 
 Point the existing proxy at `127.0.0.1:GATEWAY_HTTP_PORT`.
@@ -58,7 +58,7 @@ clients behind the same proxy share a rate-limit bucket. Never use `0.0.0.0/0` o
 Set `PROXY_NETWORK` to the existing network used by your proxy:
 
 ```sh
-docker compose -f docker-compose.yml -f compose.proxy-network.yml up -d --build
+docker compose -f docker-compose.yml -f compose.proxy-network.yml up -d
 ```
 
 The proxy connects to `http://rdsh-gateway:8080` on that network. Use
@@ -77,18 +77,19 @@ bypass gateway authentication.
 | `gateway_state` named volume | gateway `/var/lib/rdsh` | gateway only |
 | `AUTH_PASSWORD_HASH` | gateway environment | bcrypt hash, never the original password |
 
-Both images are built for `RDSH_UID:RDSH_GID`. The Bash installer uses the invoking
-user's IDs, or 1000:1000 when invoked as root. It creates a new deployment directory,
-`.env` with mode 0600 and a dedicated home with mode 0700. It never reads an existing
-`.env`, prompts for a password, starts containers or changes an existing deployment.
-The single master archive supplies matching Compose and image sources; only the
-allowlisted deployment files are extracted. Download/extraction failure cleans the
+The published images run as fixed UID/GID `1000:1000`. The Bash installer creates
+a new deployment directory, `.env` with mode 0600 and a dedicated home with mode
+0700. It uses a one-shot root process with only `CAP_CHOWN` added to the published
+DSH image to assign that new HOME to 1000:1000; no persistent service is started. It never reads an existing
+`.env`, prompts for a password or changes an existing deployment. The single master
+archive supplies matching Compose and configuration files; only those two allowlisted
+files are extracted. Download/extraction failure cleans the
 staging directory and does not create the destination. A failure during final copy
 may leave a partial new directory; inspect it before retrying with a fresh path.
 
-When changing UID/GID on an existing installation, rebuild both images and adjust
-ownership of the home and named volumes explicitly; rebuilding does not change
-existing named volume metadata. No recursive ownership change is done by bootstrap.
+For a custom home path, prepare it as 1000:1000 with mode 0700. Supporting another
+runtime UID requires custom image builds and corresponding ownership of the home
+and named volumes; changing only Compose's `user` is insufficient.
 
 Do not mount a real login home, SSH directory, credential store, or Docker socket.
 The DSH home is intentionally writable by the agent, including its own settings
@@ -124,7 +125,7 @@ docker compose exec gateway /usr/local/bin/rdsh-gateway hash-password
 docker compose up -d --force-recreate gateway
 ```
 
-For an offline gateway, use `docker compose run --build --rm --no-deps gateway
+For an offline gateway, use `docker compose run --rm --no-deps gateway
 hash-password`. The subcommand runs before server configuration validation and
 does not need a password hash, a public domain, DSH or published ports.
 
@@ -147,6 +148,6 @@ A persistent signing key does not preserve process-local sessions across restart
 When migrating an older rdsh checkout, remove `compose.https.yml` from the command:
 HTTPS is now the base default. Transfer the old hash into the new `.env` yourself,
 or explicitly retain the old file mounts and credential variables in your Compose.
-Preserve the existing HOME, UID/GID and named volumes. For an external proxy, apply
+Preserve the existing HOME ownership and named volumes. For an external proxy, apply
 the updated proxy override or remove base ports and set `TLS_MODE: external` by hand
 **before** recreating containers. Do not run the installer over an existing checkout.

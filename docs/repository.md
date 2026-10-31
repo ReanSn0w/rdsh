@@ -10,6 +10,9 @@
 
 Runtime data and credentials belong in ignored directories, never in build
 contexts. Each Docker image uses its own component directory as its build context.
+GitHub Actions publishes `linux/amd64` and `linux/arm64` images to
+`ghcr.io/reansn0w/rdsh-gateway` and `ghcr.io/reansn0w/rdsh-dsh`. The user-facing
+Compose pulls these images and contains no local build contexts.
 
 rdsh is an independent deployment wrapper for
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).

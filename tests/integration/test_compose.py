@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def rendered(override=None, **settings):
-    env = {**os.environ, "PUBLIC_URL": "https://dsh.example.test/", "DSH_VERSION": "0.2.1-rc.5", "ACME_EMAIL": "test@example.test", "PROXY_NETWORK": "test-proxy", "RDSH_UID": "1234", "RDSH_GID": "1234", **settings}
+    env = {**os.environ, "PUBLIC_URL": "https://dsh.example.test/", "DSH_VERSION": "0.2.1-rc.5", "ACME_EMAIL": "test@example.test", "PROXY_NETWORK": "test-proxy", **settings}
     command = ["docker", "compose", "--env-file", "/dev/null", "-f", str(ROOT / "docker-compose.yml")]
     if override:
         command += ["-f", str(ROOT / override)]
@@ -23,13 +23,19 @@ class ComposeBoundaries(unittest.TestCase):
         self.assertEqual(set(config["services"]), {"gateway", "dsh"})
         for service in config["services"].values():
             self.assertTrue(service["read_only"])
-            self.assertEqual(service["user"], "1234:1234")
+            self.assertEqual(service["user"], "1000:1000")
             self.assertEqual(service["cap_drop"], ["ALL"])
             self.assertFalse(service.get("privileged", False))
             self.assertNotEqual(service.get("network_mode"), "host")
         dsh = config["services"]["dsh"]
+        self.assertEqual(dsh["image"], "ghcr.io/reansn0w/rdsh-dsh:latest")
+        self.assertEqual(dsh["pull_policy"], "missing")
         self.assertFalse(dsh.get("ports"))
         gateway = config["services"]["gateway"]
+        self.assertEqual(gateway["image"], "ghcr.io/reansn0w/rdsh-gateway:latest")
+        self.assertEqual(gateway["pull_policy"], "missing")
+        self.assertNotIn("build", dsh)
+        self.assertNotIn("build", gateway)
         self.assertFalse(dsh.get("secrets"))
         self.assertEqual([v["target"] for v in dsh["volumes"]], ["/home/dsh", "/run/rdsh"])
         self.assertFalse(any(v["target"] == "/home/dsh" for v in gateway["volumes"]))

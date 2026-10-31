@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def fixture(directory):
     archive = directory / "source.tar.gz"
     with tarfile.open(archive, "w:gz") as output:
-        for name in ["docker-compose.yml", ".env.example", "dsh", "gateway"]:
+        for name in ["docker-compose.yml", ".env.example"]:
             output.add(ROOT / name, arcname="rdsh-master/" + name)
     binaries = directory / "bin"
     binaries.mkdir()
