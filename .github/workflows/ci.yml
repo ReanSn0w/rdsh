@@ -54,3 +54,11 @@ jobs:
         run: python3 tests/integration/setup-smoke.py
       - name: Build images and exercise real DSH without model calls
         run: python3 tests/integration/smoke.py --proxy-mode '${{ matrix.proxy-mode }}'
+
+  publish-images:
+    needs: [checks, integration]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/publish-images.yml

@@ -1,17 +1,11 @@
 name: Publish container images
 
 on:
-  push:
-    branches: [master]
-    tags: ['v*']
+  workflow_call:
 
 permissions:
   contents: read
   packages: write
-
-concurrency:
-  group: images-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   publish:
