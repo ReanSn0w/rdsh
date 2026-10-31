@@ -43,10 +43,12 @@ python3 tests/integration/smoke.py --proxy-mode network --standard-public-ports
 It requires loopback 80/443 to be available to Docker. It never stops an existing
 service to acquire them. Ordinary CI smoke runs use high ephemeral host ports.
 
-GitHub Actions repeats unit/configuration checks and the three real-DSH proxy
-modes on Linux AMD64. A configured workflow is not itself evidence of a completed
-remote run; consult the repository's actual Actions results. Other architectures
-are not implied by the local ARM64 results.
+GitHub Actions passed unit/configuration checks and all three real-DSH proxy
+modes on Linux AMD64 on 2026-10-31:
+[run 41201184470](https://github.com/ReanSn0w/rdsh/actions/runs/41201184470),
+commit `9ce08b682db8ae2c67d93f956580e20505e527b9`. This independently verifies
+the host-proxy, Docker-network proxy and automatic HTTPS deployments on AMD64.
+Other architectures are not implied by these ARM64 and AMD64 results.
 
 Action references were resolved against their official repositories with
 `git ls-remote` before being pinned to commit IDs. Component-specific tests and
