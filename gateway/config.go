@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -66,9 +67,19 @@ func loadConfig() (config, error) {
 		}
 		c.TrustedProxies = append(c.TrustedProxies, network)
 	}
-	c.PasswordHash, err = readPrivateFile(env("AUTH_PASSWORD_HASH_FILE", "/run/secrets/password_hash"))
-	if err != nil {
-		return c, fmt.Errorf("password hash file: %w", err)
+	hash, hashFile := os.Getenv("AUTH_PASSWORD_HASH"), os.Getenv("AUTH_PASSWORD_HASH_FILE")
+	if hash != "" && hashFile != "" {
+		return c, errors.New("set only one of AUTH_PASSWORD_HASH and AUTH_PASSWORD_HASH_FILE")
+	}
+	if hashFile != "" {
+		c.PasswordHash, err = readPrivateFile(hashFile)
+		if err != nil {
+			return c, fmt.Errorf("password hash file: %w", err)
+		}
+	} else if hash != "" {
+		c.PasswordHash = []byte(hash)
+	} else {
+		return c, errors.New("set AUTH_PASSWORD_HASH or AUTH_PASSWORD_HASH_FILE; generate a hash with hash-password")
 	}
 	c.PasswordHash = []byte(strings.TrimSpace(string(c.PasswordHash)))
 	cost, err := bcrypt.Cost(c.PasswordHash)
@@ -78,7 +89,16 @@ func loadConfig() (config, error) {
 	if err := bcrypt.CompareHashAndPassword(c.PasswordHash, []byte("rdsh configuration validation")); err != nil && !errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
 		return c, errors.New("malformed bcrypt password hash")
 	}
-	key, err := readPrivateFile(env("SESSION_SECRET_FILE", "/run/secrets/session_secret"))
+	// Sessions are process-local. A fresh signing key has the same lifetime.
+	if os.Getenv("SESSION_SECRET_FILE") == "" {
+		c.SessionKey = make([]byte, 32)
+		if _, err := rand.Read(c.SessionKey); err != nil {
+			return c, errors.New("cannot generate session signing key")
+		}
+		return c, nil
+	}
+	// Explicit file support preserves compatibility with existing deployments.
+	key, err := readPrivateFile(os.Getenv("SESSION_SECRET_FILE"))
 	if err != nil {
 		return c, fmt.Errorf("session secret file: %w", err)
 	}
