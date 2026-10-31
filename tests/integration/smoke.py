@@ -229,11 +229,21 @@ def main():
             if args.proxy_mode in ("network", "auto"):
                 status, _, _ = browser.request("GET", "/api/remote.mux", extra={"Connection": "Upgrade", "Upgrade": "websocket", "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ=="})
                 assert status == 101, f"authenticated WebSocket status {status}"
-            marker = home / "persistence-check.txt"
-            marker.write_text("synthetic persistence marker\n")
+            marker = "/home/dsh/persistence-check.txt"
+            command(
+                "docker", "run", "--rm", "--user", "1000:1000", "--network", "none",
+                "--mount", f"type=bind,src={home},dst=/home/dsh",
+                "--entrypoint", "sh", runtime_image, "-c",
+                f"printf '%s\\n' 'synthetic persistence marker' > {marker}",
+            )
             print("Checking DSH recreation, preserved home and fresh-browser login", flush=True)
             command(*compose, "up", "-d", "--force-recreate", "--wait", "--wait-timeout", "180", "dsh", env=environment)
-            assert marker.read_text() == "synthetic persistence marker\n"
+            persisted = command(
+                "docker", "run", "--rm", "--user", "1000:1000", "--network", "none",
+                "--mount", f"type=bind,src={home},dst=/home/dsh,readonly",
+                "--entrypoint", "cat", runtime_image, marker,
+            ).stdout
+            assert persisted == b"synthetic persistence marker\n"
             assert browser.request("GET", "/")[0] == 200, "existing browser session lost after DSH recreation"
             Browser(tls_port, certificate, authority).login()
             print("Checking logout and gateway session revocation", flush=True)
@@ -264,6 +274,12 @@ def main():
                 subprocess.run(compose + ["down", "-v", "--remove-orphans"], env=environment, capture_output=True)
             if network_created:
                 subprocess.run(["docker", "network", "rm", environment["PROXY_NETWORK"]], capture_output=True)
+            subprocess.run([
+                "docker", "run", "--rm", "--user", "0:0", "--network", "none",
+                "--mount", f"type=bind,src={home},dst=/home/dsh",
+                "--entrypoint", "chown", runtime_image,
+                f"{os.getuid()}:{os.getgid()}", "/home/dsh",
+            ], capture_output=True)
             subprocess.run(["docker", "image", "rm", gateway_image, runtime_image], capture_output=True)
 
 

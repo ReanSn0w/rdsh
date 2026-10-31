@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Verify install -> hash command -> literal .env interpolation with real Docker."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -58,6 +59,12 @@ def main():
             if probe:
                 subprocess.run(["docker", "rm", "-f", probe], capture_output=True)
             subprocess.run(compose + ["down", "-v"], capture_output=True)
+            subprocess.run([
+                "docker", "run", "--rm", "--user", "0:0", "--network", "none",
+                "--mount", f"type=bind,src={destination / 'data/home'},dst=/home/dsh",
+                "--entrypoint", "chown", dsh_image,
+                f"{os.getuid()}:{os.getgid()}", "/home/dsh",
+            ], capture_output=True)
             subprocess.run(["docker", "image", "rm", gateway_image, dsh_image], capture_output=True)
 
 
