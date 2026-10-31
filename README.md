@@ -119,6 +119,10 @@ docker compose logs --tail=50 dsh
 ## Управление
 
 ```sh
+# Запустить команду DSH внутри работающего контейнера.
+docker compose exec dsh dsh --version
+# Управлять плагинами web-профиля (вместо PACKAGE_SPEC укажите пакет).
+docker compose exec dsh dsh plugin --profile web add PACKAGE_SPEC
 # Остановить, сохранив HOME и именованные тома.
 docker compose down
 # Запустить снова.

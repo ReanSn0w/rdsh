@@ -24,6 +24,8 @@ An installation is first built in a new staging directory, then marked ready and
 
 Subsequent starts run a local `--version` executable check and reuse the validated version without reinstalling from npm. A broken executable triggers a fresh locked installation. The current-installation pointer is refreshed on reuse as well as installation. To update, obtain a wrapper image containing the new release lock, explicitly change DSH_VERSION, and recreate the container. Changing DSH_VERSION to an arbitrary npm version is rejected. Older installation directories remain present, but upstream data-format migrations can make downgrades incompatible; no automatic data rollback is provided.
 
+The active installation's npm executable directory is on the image `PATH` through the atomic `~/.rdsh/current` link. After the container becomes healthy, administrative commands therefore work without knowing the versioned installation path, for example `docker compose exec dsh dsh --version`. The same path follows an activated DSH update automatically. The image also activates the upstream release's pinned `pnpm@11.28.5`, which `dsh plugin` needs to manage external packages; Corepack is configured not to select a floating latest version.
+
 Installation has bounded npm network retries and a ten-minute process timeout. Failed first install exits nonzero with a credential-free diagnostic. Verify registry access and available disk space before retrying. A hard kill may leave an unused staging directory under `.rdsh/releases`; subsequent launches use a fresh directory and never treat it as complete. Incomplete and old version directories continue consuming space until the owner removes the unwanted installations while DSH is stopped.
 
 ## Startup, readiness and logs
@@ -38,7 +40,7 @@ SIGTERM/SIGINT cancel installation or stop the DSH process group. The supervisor
 
 ## Container restrictions
 
-The image contains Node/npm and the wrapper, but no preinstalled DSH, user account credentials or certificates. Runtime UID/GID must be positive non-root IDs. Use a read-only root filesystem, `cap_drop: [ALL]`, `no-new-privileges:true`, the default Docker seccomp profile and `/tmp` as `rw,nosuid,nodev,noexec` tmpfs. Only HOME and the dedicated handoff directory need persistent write access. The native addon cache remains under HOME because shared libraries require executable mappings.
+The image contains Node/npm, the pinned pnpm managed by Corepack, and the wrapper, but no preinstalled DSH, user account credentials or certificates. Runtime UID/GID must be positive non-root IDs. Use a read-only root filesystem, `cap_drop: [ALL]`, `no-new-privileges:true`, the default Docker seccomp profile and `/tmp` as `rw,nosuid,nodev,noexec` tmpfs. Only HOME and the dedicated handoff directory need persistent write access. The native addon cache remains under HOME because shared libraries require executable mappings.
 
 The tested starting limits are 2 CPUs, 3 GiB RAM, 512 PIDs and a 512 MiB `/tmp`. Tune resources for actual workloads; these limits do not constrain the size of the host HOME directory. Allow at least 15 minutes of healthcheck startup grace for the first installation and at least 12 seconds for shutdown. Never mount Docker's socket or host credential directories and never use host PID/network namespaces, privileged mode or seccomp=unconfined to work around an upstream error.
 

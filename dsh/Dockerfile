@@ -6,6 +6,9 @@ RUN test "$RDSH_UID" -gt 0 && test "$RDSH_GID" -gt 0 \
     && apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates git tini util-linux \
     && rm -rf /var/lib/apt/lists/* \
+    && COREPACK_HOME=/opt/corepack corepack enable pnpm \
+    && COREPACK_HOME=/opt/corepack corepack install --global pnpm@11.28.5 \
+    && COREPACK_HOME=/opt/corepack pnpm --version | grep -Fx 11.28.5 \
     && userdel node \
     && if getent group node >/dev/null; then groupdel node; fi \
     && if ! getent group "$RDSH_GID" >/dev/null; then groupadd --gid "$RDSH_GID" dsh; fi \
@@ -20,7 +23,10 @@ ENV HOME=/home/dsh \
     DSH_VERSION=0.2.1-rc.5 \
     DSH_HANDOFF_FILE=/run/rdsh/connection.json \
     NARB_NATIVE_CACHE_DIR=/home/dsh/.cache/native \
-    npm_config_cache=/home/dsh/.cache/npm
+    npm_config_cache=/home/dsh/.cache/npm \
+    COREPACK_HOME=/opt/corepack \
+    COREPACK_DEFAULT_TO_LATEST=0 \
+    PATH=/home/dsh/.rdsh/current/node_modules/.bin:$PATH
 
 WORKDIR /home/dsh
 USER ${RDSH_UID}:${RDSH_GID}

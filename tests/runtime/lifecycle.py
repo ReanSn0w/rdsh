@@ -64,6 +64,11 @@ def main():
     try:
         docker("network", "create", network)
         create()
+        version = docker("exec", name, "dsh", "--version").stdout.strip()
+        assert version == "0.2.1-rc.5", f"dsh is not available on PATH (reported {version!r})"
+        pnpm_version = docker("exec", name, "pnpm", "--version").stdout.strip()
+        assert pnpm_version == "11.28.5", f"pinned pnpm is unavailable (reported {pnpm_version!r})"
+        print("PASS: dsh and pinned pnpm commands are available on PATH", flush=True)
         verify("record")
         config = json.loads(docker("inspect", name).stdout)[0]
         assert config["Config"]["User"] != "0:0"

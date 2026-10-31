@@ -178,6 +178,10 @@ def main():
             started = True
             print("Starting the two services and installing real DSH", flush=True)
             command(*compose, "up", "-d", "--wait", "--wait-timeout", "900", env=environment)
+            version = command(*compose, "exec", "-T", "dsh", "dsh", "--version", env=environment).stdout.decode().strip()
+            assert version == environment["DSH_VERSION"], f"dsh is not available on PATH (reported {version!r})"
+            pnpm_version = command(*compose, "exec", "-T", "dsh", "pnpm", "--version", env=environment).stdout.decode().strip()
+            assert pnpm_version == "11.28.5", f"pinned pnpm is unavailable (reported {pnpm_version!r})"
             ids = command(*compose, "ps", "-q", env=environment).stdout.splitlines()
             assert len(ids) == 2, "expected exactly two production services"
             if args.proxy_mode == "host":
