@@ -35,7 +35,7 @@ The gateway independently requires its own valid user session for every DSH requ
 | DSH_UPSTREAM (gateway) | `http://dsh:3080`, configured independently of handoff data |
 | Runtime user | Build arguments `RDSH_UID` / `RDSH_GID`, both default `1000` |
 
-The handoff is UTF-8 JSON `{ "token": "...", "generation": "..." }`, no more than 4096 bytes. `generation` is a fresh UUID per DSH process. The runtime writes a temporary file and atomically renames it; only that runtime can write the volume, while the gateway mounts it read-only. The runtime removes stale handoff state before boot and removes current state on shutdown. A missing or invalid handoff fails closed. No shared HOME or gateway credentials are needed.
+The handoff is UTF-8 JSON `{ "token": "...", "generation": "..." }`, no more than 2048 bytes. `generation` is a fresh UUID per DSH process. The runtime writes a temporary file and atomically renames it; only that runtime can write the volume, while the gateway mounts it read-only. The runtime removes stale handoff state before boot and removes current state on shutdown. A missing or invalid handoff fails closed. No shared HOME or gateway credentials are needed.
 
 The wrapper selects one concrete container IPv4 address, supplies `--no-open`, `--host`, `--port`, `--public-url` and `--trusted-host`. Only the DSH network is attached to this container. Recompute the bind address on every start; DSH rejects wildcard binds.
 

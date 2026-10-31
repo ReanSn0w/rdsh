@@ -25,3 +25,13 @@ An installation is first built in a new staging directory, then marked ready and
 Subsequent starts run a local `--version` executable check and reuse the validated version without reinstalling from npm. A broken executable triggers a fresh locked installation. The current-installation pointer is refreshed on reuse as well as installation. To update, obtain a wrapper image containing the new release lock, explicitly change DSH_VERSION, and recreate the container. Changing DSH_VERSION to an arbitrary npm version is rejected. Older installation directories remain present, but upstream data-format migrations can make downgrades incompatible; no automatic data rollback is provided.
 
 Installation has bounded npm network retries and a ten-minute process timeout. Failed first install exits nonzero with a credential-free diagnostic. Verify registry access and available disk space before retrying. A hard kill may leave an unused staging directory under `.rdsh/releases`; subsequent launches use a fresh directory and never treat it as complete. Incomplete and old version directories continue consuming space until the owner removes the unwanted installations while DSH is stopped.
+
+## Startup, readiness and logs
+
+The runtime selects the sole non-loopback IPv4 address. If a custom deployment attaches multiple networks, explicitly choose `DSH_BIND_INTERFACE`; never replace the bind address with `0.0.0.0`. PUBLIC_URL must be the public HTTPS origin with root path, including when TLS is handled by an external proxy.
+
+The supervisor consumes DSH's startup URL privately. It validates the expected origin and token format, confirms HTTP readiness, then atomically publishes the handoff. Healthchecks confirm both the current generation and a reachable protected HTTP endpoint. They never exchange a token or print one. The handoff is cleared before startup and on graceful shutdown; after an abrupt container termination it can remain until the next launch, so the gateway must treat failed upstream exchange as unavailable.
+
+DSH stdout/stderr and npm diagnostics are not relayed into Docker logs. Only wrapper lifecycle messages and allowlisted failure categories appear. DSH itself may save private startup diagnostics under `.dsh/logs`; early native failures may not produce such a file. These upstream diagnostics can contain configuration values and should be inspected locally by the owner, not pasted wholesale into bug reports.
+
+SIGTERM/SIGINT cancel installation or stop the DSH process group. The supervisor escalates a DSH process that has not stopped after eight seconds; the container's init reaps orphaned processes. Configure a Compose stop grace period longer than this bound.
