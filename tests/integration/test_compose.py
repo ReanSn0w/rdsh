@@ -18,26 +18,27 @@ def rendered(override=None, **settings):
 
 
 class ComposeBoundaries(unittest.TestCase):
-    def test_base_publishes_nothing(self):
+    def test_base_standalone_security_boundaries(self):
         config = rendered()
         self.assertEqual(set(config["services"]), {"gateway", "dsh"})
         for service in config["services"].values():
-            self.assertFalse(service.get("ports"))
             self.assertTrue(service["read_only"])
             self.assertEqual(service["user"], "1234:1234")
             self.assertEqual(service["cap_drop"], ["ALL"])
             self.assertFalse(service.get("privileged", False))
             self.assertNotEqual(service.get("network_mode"), "host")
         dsh = config["services"]["dsh"]
+        self.assertFalse(dsh.get("ports"))
         gateway = config["services"]["gateway"]
         self.assertFalse(dsh.get("secrets"))
         self.assertEqual([v["target"] for v in dsh["volumes"]], ["/home/dsh", "/run/rdsh"])
         self.assertFalse(any(v["target"] == "/home/dsh" for v in gateway["volumes"]))
         self.assertTrue(next(v for v in gateway["volumes"] if v["target"] == "/run/rdsh")["read_only"])
-        self.assertEqual(gateway["environment"]["TLS_MODE"], "external")
+        self.assertFalse(gateway.get("secrets"))
+        self.assertEqual(gateway["environment"]["TLS_MODE"], "auto")
 
     def test_https_only_gateway_has_public_ports(self):
-        config = rendered("compose.https.yml")
+        config = rendered()
         self.assertFalse(config["services"]["dsh"].get("ports"))
         gateway = config["services"]["gateway"]
         self.assertEqual(gateway["environment"]["TLS_MODE"], "auto")
@@ -50,7 +51,10 @@ class ComposeBoundaries(unittest.TestCase):
         self.assertEqual(len(gateway["ports"]), 1)
         self.assertEqual(gateway["ports"][0]["host_ip"], "127.0.0.1")
         self.assertEqual(gateway["ports"][0]["published"], "18080")
-        self.assertNotIn("ACME_EMAIL", gateway["environment"])
+
+    def test_bootstrap_can_render_before_credentials_are_set(self):
+        config = rendered(PUBLIC_URL="", AUTH_PASSWORD_HASH="", ACME_EMAIL="")
+        self.assertEqual(config["services"]["gateway"]["environment"]["AUTH_PASSWORD_HASH"], "")
 
     def test_network_proxy_never_attaches_dsh(self):
         config = rendered("compose.proxy-network.yml")

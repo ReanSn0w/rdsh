@@ -1,5 +1,32 @@
 # Validation record
 
+## Simplified Bash bootstrap (2026-10-31)
+
+The current deployment uses standalone HTTPS by default, an environment bcrypt
+hash and a per-process signing key. Python is only a development/test dependency.
+
+- Nine Compose/bootstrap checks passed, including existing-destination refusal,
+  symlink/credential-path rejection and cleanup on failed download.
+- The real Bash 3.2 installer was exercised with an archive of current sources.
+  `docker compose run --build --rm --no-deps gateway hash-password` works before
+  PUBLIC_URL and credentials are filled in, without starting DSH or public ports.
+- A synthetic single-quoted bcrypt hash survived `.env` interpolation unchanged
+  in the actual container environment. `compose config` escapes dollars as `$$`
+  in its serialized output; the test also inspects its own disposable container.
+- A separate isolated Linux root run verified HOME ownership 1000:1000 and
+  modes 0700 for HOME / 0600 for the generated `.env`. Ordinary-user bootstrap
+  was verified with macOS UID 501 / GID 20.
+- Gateway race tests and `go vet` passed, including environment/file conflicts,
+  missing/malformed hashes and independent random signing keys on each start.
+- All three real-DSH lifecycle smoke tests passed again on Linux ARM64: default
+  ACME HTTPS, host proxy and Docker-network proxy. They now use the environment
+  hash and automatic signing key; no model calls or production ACME are used.
+
+CI runs the updated bootstrap and deployment tests on Linux AMD64 for every push;
+consult the [current workflow runs](https://github.com/ReanSn0w/rdsh/actions).
+
+## Initial implementation baseline
+
 Local validation on 2026-10-31 used Docker Engine 29.8.2 / Compose 5.5.0 on
 OrbStack, with Linux ARM64 container images. The real upstream runtime was
 `@deepseek-ai/dsh@0.2.1-rc.5` on Node.js 24.22.1. No model API calls were made.

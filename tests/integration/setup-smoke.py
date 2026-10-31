@@ -1,50 +1,63 @@
 #!/usr/bin/env python3
-"""Exercise real setup Docker CLI using synthetic interactive input in a temp root."""
-import argparse
-import importlib.util
+"""Verify install -> hash command -> literal .env interpolation with real Docker."""
 import json
-import os
 from pathlib import Path
 import subprocess
 import tempfile
-from unittest.mock import patch
+import uuid
 
-ROOT = Path(__file__).resolve().parents[2]
-spec = importlib.util.spec_from_file_location("setup", ROOT / "scripts/setup.py")
-setup = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(setup)
+from bootstrap_fixture import ROOT, fixture
+
+
+def run(*args, **kwargs):
+    return subprocess.run(args, capture_output=True, check=True, **kwargs)
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--gateway-context", type=Path, default=ROOT / "gateway")
-    args = parser.parse_args()
-    uid, gid = (os.getuid() or 1000), (os.getgid() or 1000)
-    with tempfile.TemporaryDirectory(prefix="rdsh-setup-smoke-") as directory:
+    with tempfile.TemporaryDirectory(prefix="rdsh-bootstrap-smoke-") as directory:
         temporary = Path(directory).resolve()
-        image = "rdsh-setup-smoke:local"
-        config = {"services": {
-            "gateway": {"image": image, "build": {"context": str(args.gateway_context.resolve()), "args": {"RDSH_UID": str(uid), "RDSH_GID": str(gid)}}, "user": f"{uid}:{gid}"},
-            "dsh": {"image": "unused-runtime", "user": f"{uid}:{gid}", "volumes": [{"type": "bind", "source": str(temporary / "home"), "target": "/home/dsh"}]}}}
-        (temporary / "docker-compose.yml").write_text(json.dumps(config))
+        environment = fixture(temporary)
+        destination = temporary / "deployment"
+        run("bash", str(ROOT / "scripts/install.sh"), str(destination), env=environment)
+        project = "rdsh-bootstrap-" + uuid.uuid4().hex[:10]
+        image = project + "-gateway"
+        override = temporary / "image.json"
+        override.write_text(json.dumps({"services": {"gateway": {"image": image}}}))
+        compose = ["docker", "compose", "--env-file", str(destination / ".env"), "-p", project, "-f", str(destination / "docker-compose.yml"), "-f", str(override)]
+        probe = None
         try:
-            with patch.object(setup, "ROOT", temporary), patch("sys.stdin.isatty", return_value=True), patch("getpass.getpass", return_value="synthetic-initial-password"), patch("sys.argv", ["setup.py"]):
-                setup.main()
-            for name in ("password_hash", "session_secret"):
-                setup.verify_secret(temporary / "secrets" / name, uid, gid)
-            old_hash = (temporary / "secrets/password_hash").read_bytes()
-            old_session = (temporary / "secrets/session_secret").read_bytes()
-            marker = temporary / "home/marker"
-            marker.write_text("synthetic data")
-            with patch.object(setup, "ROOT", temporary), patch("sys.stdin.isatty", return_value=True), patch("getpass.getpass", return_value="synthetic-updated-password"), patch("sys.argv", ["setup.py", "--rotate-password"]):
-                setup.main()
-            assert (temporary / "secrets/password_hash").read_bytes() != old_hash
-            assert (temporary / "secrets/session_secret").read_bytes() == old_session
-            assert marker.read_text() == "synthetic data"
-            print("PASS: setup creates private secrets, password rotation preserves session secret and home")
+            config_file = destination / ".env"  # Our own disposable generated template only.
+            config_file.write_text(config_file.read_text().replace("PUBLIC_URL=https://dsh.example.com/", "PUBLIC_URL="))
+            # Empty credentials allow a one-shot command, without starting DSH or ports.
+            output = run(*compose, "run", "--build", "--rm", "--no-deps", "-T", "gateway", "hash-password", input=b"bootstrap-test-password\n").stdout
+            # BuildKit progress may share stdout with the final CLI result.
+            hashed = output.strip().splitlines()[-1].decode()
+            assert hashed.startswith("$2") and len(hashed) == 60
+            text = config_file.read_text().replace("AUTH_PASSWORD_HASH=''", "AUTH_PASSWORD_HASH='" + hashed + "'")
+            config_file.write_text(text)
+            config = json.loads(run(*compose, "config", "--format", "json").stdout)
+            gateway = config["services"]["gateway"]
+            # `config` serializes dollars as $$; inspect the actual created container too.
+            assert gateway["environment"]["AUTH_PASSWORD_HASH"].replace("$$", "$") == hashed
+            assert gateway["environment"]["TLS_MODE"] == "auto"
+            assert {p["published"] for p in gateway["ports"]} == {"80", "443"}
+            assert not gateway.get("secrets")
+            assert not run(*compose, "ps", "-q").stdout.strip(), "hash command started persistent services"
+            # A short-lived healthcheck command starts no server or dependencies.
+            probe = run(*compose, "run", "--no-deps", "--detach", "gateway", "healthcheck").stdout.strip().decode()
+            values = json.loads(run("docker", "inspect", "--format", "{{json .Config.Env}}", probe).stdout)
+            actual = dict(value.split("=", 1) for value in values)
+            assert actual["AUTH_PASSWORD_HASH"] == hashed, "Compose changed bcrypt in the container environment"
+            print("PASS: Bash bootstrap, isolated hash command before first start, literal bcrypt .env, default HTTPS")
         finally:
+            if probe:
+                subprocess.run(["docker", "rm", "-f", probe], capture_output=True)
+            subprocess.run(compose + ["down", "-v"], capture_output=True)
             subprocess.run(["docker", "image", "rm", image], capture_output=True)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except subprocess.CalledProcessError as error:
+        raise SystemExit(f"Bootstrap smoke failed (exit {error.returncode}); generated credentials withheld") from None

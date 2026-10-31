@@ -1,4 +1,4 @@
-# Select exactly one publication override; the base publishes no host ports.
+# Standalone HTTPS: configure .env, then docker compose up -d.
 name: rdsh
 
 x-logging: &logging
@@ -23,8 +23,8 @@ services:
     environment:
       HOME: /home/dsh
       DSH_HOME: /home/dsh/.dsh
-      PUBLIC_URL: ${PUBLIC_URL:?Set PUBLIC_URL to your public HTTPS URL}
-      DSH_VERSION: ${DSH_VERSION:?Set an exact supported DSH_VERSION}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      DSH_VERSION: ${DSH_VERSION:-0.2.1-rc.5}
       DSH_HANDOFF_FILE: /run/rdsh/connection.json
     volumes:
       - type: bind
@@ -64,20 +64,20 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     environment:
-      PUBLIC_URL: ${PUBLIC_URL:?Set PUBLIC_URL to your public HTTPS URL}
-      TLS_MODE: external
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      TLS_MODE: auto
+      ACME_EMAIL: ${ACME_EMAIL:-}
       HTTP_ADDR: :8080
       HTTPS_ADDR: :8443
       AUTH_USERNAME: ${AUTH_USERNAME:-token}
-      AUTH_PASSWORD_HASH_FILE: /run/secrets/password_hash
-      SESSION_SECRET_FILE: /run/secrets/session_secret
+      AUTH_PASSWORD_HASH: ${AUTH_PASSWORD_HASH:-}
       STATE_DIR: /var/lib/rdsh
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       DSH_HANDOFF_FILE: /run/rdsh/connection.json
       DSH_UPSTREAM: http://dsh:3080
-    secrets:
-      - password_hash
-      - session_secret
+    ports:
+      - "80:8080"
+      - "443:8443"
     volumes:
       - type: volume
         source: handoff
@@ -112,9 +112,3 @@ networks:
 volumes:
   handoff:
   gateway_state:
-
-secrets:
-  password_hash:
-    file: ./secrets/password_hash
-  session_secret:
-    file: ./secrets/session_secret

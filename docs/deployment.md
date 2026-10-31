@@ -1,12 +1,15 @@
 # Deployment details
 
-The base `docker-compose.yml` publishes no host ports. Add exactly one publication
-override. Changing modes means replacing that override in the command, not stacking
-all of them. All commands below run from the repository root.
+The base `docker-compose.yml` is the standalone HTTPS deployment: it publishes
+only the gateway on 80/443. Run `docker compose up -d` after bootstrap and `.env`.
+
+Optional overrides remain in the source repository for advanced proxy integration;
+the installer does not download them. Do not stack proxy modes. These overrides
+require Compose 2.24.4+ so inherited public ports are replaced, never appended.
 
 | Mode | Override | Host ports | Certificate owner |
 | --- | --- | --- | --- |
-| Standalone | `compose.https.yml` | 80, 443 | rdsh gateway |
+| Standalone | none | 80, 443 | rdsh gateway |
 | Existing proxy on host | `compose.proxy-host.yml` | configurable, loopback only | existing proxy |
 | Existing proxy in Docker | `compose.proxy-network.yml` | none | existing proxy |
 
@@ -22,7 +25,7 @@ reachable too. Make ports 80 and 443 available to this deployment and allow them
 through the firewall. Configure `PUBLIC_URL` and `ACME_EMAIL`, then:
 
 ```sh
-docker compose -f docker-compose.yml -f compose.https.yml up -d --build
+docker compose up -d
 ```
 
 Only the gateway publishes ports. ACME state is stored in its separate named
@@ -72,16 +75,20 @@ bypass gateway authentication.
 | `DSH_HOME_PATH` | DSH `/home/dsh` | read/write |
 | `handoff` named volume | both `/run/rdsh` | DSH write, gateway read-only |
 | `gateway_state` named volume | gateway `/var/lib/rdsh` | gateway only |
-| `secrets/password_hash` | gateway `/run/secrets/password_hash` | read-only |
-| `secrets/session_secret` | gateway `/run/secrets/session_secret` | read-only |
+| `AUTH_PASSWORD_HASH` | gateway environment | bcrypt hash, never the original password |
 
-Both images are built for `RDSH_UID:RDSH_GID`, default 1000:1000. Set these values
-before building to match the owner of the dedicated home. The setup helper never
-recursively changes existing data ownership. It requires private directories
-(mode 0700) and private secret files (0600). Existing directories with a different
-owner must be corrected deliberately before setup. When changing UID/GID on an
-existing installation, rebuild both images and adjust ownership of their volumes
-explicitly; a rebuild alone does not change existing named volume metadata.
+Both images are built for `RDSH_UID:RDSH_GID`. The Bash installer uses the invoking
+user's IDs, or 1000:1000 when invoked as root. It creates a new deployment directory,
+`.env` with mode 0600 and a dedicated home with mode 0700. It never reads an existing
+`.env`, prompts for a password, starts containers or changes an existing deployment.
+The single master archive supplies matching Compose and image sources; only the
+allowlisted deployment files are extracted. Download/extraction failure cleans the
+staging directory and does not create the destination. A failure during final copy
+may leave a partial new directory; inspect it before retrying with a fresh path.
+
+When changing UID/GID on an existing installation, rebuild both images and adjust
+ownership of the home and named volumes explicitly; rebuilding does not change
+existing named volume metadata. No recursive ownership change is done by bootstrap.
 
 Do not mount a real login home, SSH directory, credential store, or Docker socket.
 The DSH home is intentionally writable by the agent, including its own settings
@@ -112,14 +119,34 @@ tools and are not part of rdsh.
 ## Password rotation and restarts
 
 ```sh
-python3 scripts/setup.py --rotate-password
-docker compose -f docker-compose.yml -f compose.proxy-host.yml up -d --force-recreate gateway
+docker compose exec gateway /usr/local/bin/rdsh-gateway hash-password
+# Put the resulting hash in AUTH_PASSWORD_HASH in .env, in single quotes.
+docker compose up -d --force-recreate gateway
 ```
 
-Use your selected override in the second command. Recreate, rather than only restart,
-reloads the atomically replaced bind-mounted password hash. Gateway sessions live in
-memory, so recreating/restarting the gateway logs out every client and closes their
-connections. The stable password can be filled by the browser password manager.
+For an offline gateway, use `docker compose run --build --rm --no-deps gateway
+hash-password`. The subcommand runs before server configuration validation and
+does not need a password hash, a public domain, DSH or published ports.
 
-Restarting DSH does not change the gateway password. The adapter reads the current
-DSH process credential and performs the native session exchange automatically.
+Recreating reloads the environment; `restart` does not reload `.env`. Gateway
+sessions and their random signing key live in memory, so a gateway restart logs
+out every client and closes their connections. Restarting DSH does not change the
+gateway password; its native credential is exchanged automatically.
+
+## Optional file-based credentials and existing installations
+
+The gateway still accepts an explicit `AUTH_PASSWORD_HASH_FILE` instead of
+`AUTH_PASSWORD_HASH`; setting both nonempty is an error. Mount that file read-only
+into the gateway yourself and remove/empty the environment hash. The file must be
+readable by the gateway UID and not readable by others (for example 0600 or 0640).
+
+`SESSION_SECRET_FILE` remains supported when explicitly set, for compatibility.
+Without it, 32 cryptographically random bytes are generated at each gateway start.
+A persistent signing key does not preserve process-local sessions across restarts.
+
+When migrating an older rdsh checkout, remove `compose.https.yml` from the command:
+HTTPS is now the base default. Transfer the old hash into the new `.env` yourself,
+or explicitly retain the old file mounts and credential variables in your Compose.
+Preserve the existing HOME, UID/GID and named volumes. For an external proxy, apply
+the updated proxy override or remove base ports and set `TLS_MODE: external` by hand
+**before** recreating containers. Do not run the installer over an existing checkout.

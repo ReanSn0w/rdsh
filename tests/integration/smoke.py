@@ -134,23 +134,16 @@ def main():
             os.chown(home, uid, gid)
         certificate, key = temporary / "cert.pem", temporary / "key.pem"
         command("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", str(key), "-out", str(certificate), "-days", "1", "-subj", "/CN=dsh.example.test", "-addext", "subjectAltName=DNS:dsh.example.test,DNS:pebble,DNS:localhost")
-        # These credentials exist only for this isolated test deployment.
-        password_file, session_file = temporary / "password_hash", temporary / "session_secret"
-        for path in (password_file, session_file):
-            path.touch(mode=0o600)
-            if os.getuid() == 0:
-                os.chown(path, uid, gid)
         override = temporary / "test.json"
         gateway_image, runtime_image = project + "-gateway", project + "-dsh"
         override.write_text(json.dumps({"services": {
             "gateway": {"image": gateway_image, "build": {"context": str(args.gateway_context.resolve())}},
-            "dsh": {"image": runtime_image, "build": {"context": str(args.runtime_context.resolve())}, "volumes": [{"type": "bind", "source": str(home), "target": "/home/dsh"}, {"type": "volume", "source": "handoff", "target": "/run/rdsh"}]}},
-            "secrets": {"password_hash": {"file": str(password_file)}, "session_secret": {"file": str(session_file)}}}))
+            "dsh": {"image": runtime_image, "build": {"context": str(args.runtime_context.resolve())}, "volumes": [{"type": "bind", "source": str(home), "target": "/home/dsh"}, {"type": "volume", "source": "handoff", "target": "/run/rdsh"}]}}}))
         variant = ROOT / ("compose.proxy-host.yml" if args.proxy_mode == "host" else "compose.proxy-network.yml")
         if args.proxy_mode == "auto":
             # Same auto-mode override, only host ports differ to avoid other apps.
             variant = temporary / "auto.yml"
-            variant.write_text((ROOT / "compose.https.yml").read_text().replace('"80:8080"', f'"127.0.0.1:{http_port}:8080"').replace('"443:8443"', f'"127.0.0.1:{tls_port}:8443"'))
+            variant.write_text(f'services:\n  gateway:\n    ports: !override\n      - "127.0.0.1:{http_port}:8080"\n      - "127.0.0.1:{tls_port}:8443"\n')
             config = json.loads(override.read_text())
             config["services"]["gateway"].update({
                 "environment": {"ACME_DIRECTORY_URL": "https://pebble:14000/dir", "SSL_CERT_FILE": "/run/test-ca.pem"},
@@ -168,9 +161,7 @@ def main():
             if args.proxy_mode == "host":
                 print(command(sys.executable, str(ROOT / "tests/integration/image-boundaries.py"), gateway_image, runtime_image).stdout.decode(), end="", flush=True)
             hashed = command("docker", "run", "--rm", "-i", "--network", "none", gateway_image, "hash-password", input=b"integration-test-password\n").stdout
-            session = command("docker", "run", "--rm", "--network", "none", gateway_image, "generate-secret").stdout
-            password_file.write_bytes(hashed)
-            session_file.write_bytes(session)
+            environment["AUTH_PASSWORD_HASH"] = hashed.decode().strip()
             if args.proxy_mode == "network":
                 command("docker", "network", "create", environment["PROXY_NETWORK"])
                 network_created = True
