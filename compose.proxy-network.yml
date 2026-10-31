@@ -1,0 +1,12 @@
+services:
+  gateway:
+    networks:
+      runtime: {}
+      proxy:
+        aliases:
+          - rdsh-gateway
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:?Set PROXY_NETWORK to the existing proxy Docker network}
