@@ -1,0 +1,13 @@
+# User data, runtime handoff, ACME state and credentials.
+/data/
+/secrets/
+.env
+.env.*
+!.env.example
+# Local build and test artifacts.
+/artifacts/
+/test-results/
+*.log
+.DS_Store
+__pycache__/
+*.pyc

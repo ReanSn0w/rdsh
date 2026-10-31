@@ -1,0 +1,13 @@
+.git
+.gitignore
+.env
+.env.*
+data
+secrets
+artifacts
+test-results
+*.log
+plans
+.github
+__pycache__
+*.pyc

@@ -1,0 +1,54 @@
+name: Verify deployment
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rdsh-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: gateway/go.mod
+          cache-dependency-path: gateway/go.sum
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24.22.1'
+      - name: Compose and setup boundaries
+        run: python3 -m unittest discover -s tests/integration -p 'test_*.py' -v
+      - name: Gateway unit and race checks
+        working-directory: gateway
+        run: go test -race ./...
+      - name: Runtime lifecycle checks
+        run: node --test tests/runtime/*.test.mjs
+
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        proxy-mode: [host, network, auto]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Check interactive setup with synthetic input
+        if: matrix.proxy-mode == 'host'
+        run: python3 tests/integration/setup-smoke.py
+      - name: Build images and exercise real DSH without model calls
+        run: python3 tests/integration/smoke.py --proxy-mode '${{ matrix.proxy-mode }}'

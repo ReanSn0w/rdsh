@@ -1,0 +1,8 @@
+services:
+  gateway:
+    environment:
+      TLS_MODE: auto
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL for certificate notices}
+    ports:
+      - "80:8080"
+      - "443:8443"
