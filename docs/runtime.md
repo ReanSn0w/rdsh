@@ -15,3 +15,13 @@ The wrapper never recursively changes ownership or applies `chmod 777` to existi
 | `/run/rdsh/connection.json` | Separate transient handoff to the gateway; not part of HOME |
 
 All required persistent state is beneath the bind-mounted home. Recreating the container retains this state; DSH itself can modify the files it owns. Backup and restore procedures are outside this project's scope.
+
+## Installation and updates
+
+Only versions present under the image's `releases/` directory are accepted. Each release has a reviewed `package.json` and `package-lock.json`; runtime installation uses `npm ci --ignore-scripts`. The one explicitly invoked pinned helper restores node-pty's spawn-helper executable bit. Arbitrary dependency lifecycle scripts are not enabled.
+
+An installation is first built in a new staging directory, then marked ready and atomically published. A failed installation never becomes active and does not delete DSH settings or projects. A kernel `flock` covers the complete runtime lifecycle to prevent two containers from sharing the same HOME concurrently (exit 75 on contention). Do not run two DSH instances against one home.
+
+Subsequent starts run a local `--version` executable check and reuse the validated version without reinstalling from npm. A broken executable triggers a fresh locked installation. The current-installation pointer is refreshed on reuse as well as installation. To update, obtain a wrapper image containing the new release lock, explicitly change DSH_VERSION, and recreate the container. Changing DSH_VERSION to an arbitrary npm version is rejected. Older installation directories remain present, but upstream data-format migrations can make downgrades incompatible; no automatic data rollback is provided.
+
+Installation has bounded npm network retries and a ten-minute process timeout. Failed first install exits nonzero with a credential-free diagnostic. Verify registry access and available disk space before retrying. A hard kill may leave an unused staging directory under `.rdsh/releases`; subsequent launches use a fresh directory and never treat it as complete. Incomplete and old version directories continue consuming space until the owner removes the unwanted installations while DSH is stopped.
