@@ -1,5 +1,8 @@
 services:
   gateway:
+    environment:
+      TLS_MODE: external
+    ports: !reset []
     networks:
       runtime: {}
       proxy:

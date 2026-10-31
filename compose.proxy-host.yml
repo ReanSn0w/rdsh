@@ -1,4 +1,6 @@
 services:
   gateway:
-    ports:
+    environment:
+      TLS_MODE: external
+    ports: !override
       - "127.0.0.1:${GATEWAY_HTTP_PORT:-8080}:8080"

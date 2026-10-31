@@ -422,6 +422,7 @@ func TestExternalModeStartsWithoutACMEState(t *testing.T) {
 }
 
 func TestConfigurationFailsClosed(t *testing.T) {
+	t.Setenv("AUTH_PASSWORD_HASH", "")
 	dir := t.TempDir()
 	hash, _ := bcrypt.GenerateFromPassword([]byte(testPassword), 10)
 	hashPath := filepath.Join(dir, "hash")
@@ -449,6 +450,44 @@ func TestConfigurationFailsClosed(t *testing.T) {
 	os.Chmod(keyPath, 0644)
 	if _, err := loadConfig(); err == nil {
 		t.Fatal("world readable key accepted")
+	}
+}
+
+func TestEnvironmentHashAndEphemeralSessionKey(t *testing.T) {
+	t.Setenv("PUBLIC_URL", "https://workspace.example")
+	t.Setenv("AUTH_PASSWORD_HASH_FILE", "")
+	t.Setenv("SESSION_SECRET_FILE", "")
+	hash, err := bcrypt.GenerateFromPassword([]byte(testPassword), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AUTH_PASSWORD_HASH", string(hash))
+	first, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(first.PasswordHash, hash) || len(first.SessionKey) != 32 || bytes.Equal(first.SessionKey, second.SessionKey) {
+		t.Fatal("environment hash or per-start random signing key is incorrect")
+	}
+	t.Setenv("AUTH_PASSWORD_HASH_FILE", "/does/not/exist")
+	if _, err := loadConfig(); err == nil || !strings.Contains(err.Error(), "only one") || strings.Contains(err.Error(), string(hash)) {
+		t.Fatal("conflicting hash sources must fail without exposing the hash")
+	}
+	t.Setenv("AUTH_PASSWORD_HASH_FILE", "")
+	for _, value := range []string{"", "not-a-hash", "$2a$12$broken"} {
+		t.Setenv("AUTH_PASSWORD_HASH", value)
+		if _, err := loadConfig(); err == nil {
+			t.Fatal("missing or malformed environment hash accepted")
+		}
+	}
+	t.Setenv("AUTH_PASSWORD_HASH", string(hash))
+	t.Setenv("SESSION_SECRET_FILE", "/does/not/exist")
+	if _, err := loadConfig(); err == nil {
+		t.Fatal("explicit session file failure must not fall back to a random key")
 	}
 }
 

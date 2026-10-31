@@ -4,7 +4,7 @@
 - `dsh/`: Node.js runtime image and startup installation of a pinned DSH release.
 - `docs/`: deployment instructions and the tested integration contract.
 - `examples/`: optional external reverse proxy configuration.
-- `scripts/`: local setup helpers.
+- `scripts/install.sh`: Bash bootstrap from the master archive, for new directories only.
 - `tests/integration/`: checks spanning both containers.
 - `plans/`: implementation plans; completed plans move to `plans/done/`.
 
