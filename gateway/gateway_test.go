@@ -19,6 +19,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -135,6 +136,9 @@ var csrfPattern = regexp.MustCompile(`name="csrf" value="([^"]+)"`)
 func login(t *testing.T, g *gateway) []*http.Cookie {
 	t.Helper()
 	page := request(g, "GET", "/_rdsh/login", nil, nil)
+	if page.Header().Get("Referrer-Policy") != "same-origin" {
+		t.Fatal("login policy would suppress Safari form Origin")
+	}
 	csrf := csrfPattern.FindStringSubmatch(page.Body.String())
 	if len(csrf) != 2 {
 		t.Fatal("missing csrf field")
@@ -196,7 +200,7 @@ func TestCSRFHostOriginAndPathRejection(t *testing.T) {
 			t.Fatalf("unsafe path %s accepted: %d", target, res.Code)
 		}
 	}
-	for _, mode := range []string{"host", "origin", "fetch-site"} {
+	for _, mode := range []string{"host", "origin", "null-origin", "fetch-site"} {
 		r := httptest.NewRequest("GET", "https://workspace.example/", nil)
 		for _, c := range cookies {
 			r.AddCookie(c)
@@ -206,6 +210,8 @@ func TestCSRFHostOriginAndPathRejection(t *testing.T) {
 			r.Host = "evil.example"
 		case "origin":
 			r.Header.Set("Origin", "https://evil.example")
+		case "null-origin":
+			r.Header.Set("Origin", "null")
 		case "fetch-site":
 			r.Header.Set("Sec-Fetch-Site", "cross-site")
 		}
@@ -274,6 +280,33 @@ func TestMissingOrMalformedHandoffFailsClosed(t *testing.T) {
 	}
 	if request(g, "GET", "/api/test", nil, cookies).Code != 503 {
 		t.Fatal("missing handoff admitted")
+	}
+}
+
+func TestHandoffRejectsLinksAndFIFOWithoutReading(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.json")
+	writeHandoff(t, target, testToken, testGeneration)
+	link := filepath.Join(dir, "link.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readHandoff(link); err == nil {
+		t.Fatal("handoff symlink followed")
+	}
+	fifo := filepath.Join(dir, "fifo.json")
+	if err := syscall.Mkfifo(fifo, 0600); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { _, err := readHandoff(fifo); done <- err }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("FIFO accepted")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("handoff read blocked on FIFO")
 	}
 }
 

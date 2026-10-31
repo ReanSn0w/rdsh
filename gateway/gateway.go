@@ -47,6 +47,7 @@ func newGateway(c config) *gateway {
 			}
 		},
 		ModifyResponse: func(r *http.Response) error {
+			r.Header.Set("Referrer-Policy", "same-origin")
 			// Only the explicit exchange endpoint can set browser auth cookies.
 			r.Header.Del("Set-Cookie")
 			if r.StatusCode == http.StatusUnauthorized {
@@ -95,7 +96,9 @@ func (g *gateway) validOrigin(r *http.Request) bool {
 
 func securityHeaders(w http.ResponseWriter) {
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Referrer-Policy", "no-referrer")
+	// no-referrer can turn form POST Origin into "null" in Safari. Retain same-origin
+	// metadata for CSRF checks without sending referrers to external sites.
+	w.Header().Set("Referrer-Policy", "same-origin")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Strict-Transport-Security", "max-age=31536000")
 }

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"syscall"
 	"time"
 )
 
@@ -21,7 +22,8 @@ var dshCookieName = regexp.MustCompile(`^dsh-auth-[A-Za-z0-9_-]{16,128}$`)
 
 func readHandoff(path string) (handoff, error) {
 	var h handoff
-	f, err := os.Open(path)
+	// DSH owns this directory. Never follow its links into gateway secrets or block on a FIFO.
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return h, errors.New("DSH handoff unavailable")
 	}
